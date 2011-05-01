@@ -166,6 +166,7 @@ else
 	fi
 	
 	if test "x$use_activemq" != xno; then
+		# PKG_CHECK_MODULES provides environment vars in activemq_CFLAGS and activemq_LIBS
 		PKG_CHECK_MODULES([ACTIVEMQ], [activemq-cpp],
 		[
 			AC_DEFINE([HAVE_ACTIVEMQ], [1], [Define if you have activemq-cpp])

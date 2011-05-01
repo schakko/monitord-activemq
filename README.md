@@ -12,7 +12,7 @@ Compile monitord by passing --with-activemq
 ## Configuration 
 Edit your monitord.xml:
 
-<dataplugins>
+	<dataplugins>
 	<plugin name="activemq">
 		<file>plugins/libmplugin_activemq.so</file>
 		<parameters>
@@ -46,4 +46,4 @@ Edit your monitord.xml:
 			<!-- ZVEI is not defined, so generic configuration is used -->
 		</parameters>
 	</plugin>
-</dataplugins> 
+	</dataplugins> 
