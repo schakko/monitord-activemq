@@ -3,352 +3,357 @@
  * http://github.com/schakko/monitord-activemq
  * Contains *untested* prototyped code
  */
-#include <typeinfo>
-#include <iostream>
-
-#ifdef WIN32
-#define usleep Sleep
-#include <windows.h>
-#endif
-
-#include "mplugin.h"
-#include "../MonitorLogging.h"
-#include <activemq/core/ActiveMQConnectionFactory.h>
-#include <activemq/util/Config.h>
-#include <activemq/library/ActiveMQCPP.h>
-#include <cms/Connection.h>
-#include <cms/Session.h>
-#include <cms/TextMessage.h>
-#include <cms/BytesMessage.h>
-#include <cms/MapMessage.h>
-#include <cms/ExceptionListener.h>
-#include <cms/MessageListener.h>
-
+#include "libmplugin_activemq.h"
 
 using namespace std;
 using namespace activemq;
 using namespace activemq::core;
+using namespace decaf::lang::exceptions;
 using namespace cms;
 
-typedef struct
+MonitorPlugInActiveMQ::MonitorPlugInActiveMQ()
 {
-	bool bUseTopic;
-	bool bDeliveryModePersistent;
-	std::string destUri;
-	Destination *destination;
-	MessageProducer *producer;
-} TopicInfo;
+	m_bUseCompression = false;
+	m_bClientAck = false;
+	m_bConnected = false;
+ 	m_brokerUri = "tcp://127.0.0.1:61616";
+ 	m_username = "";
+ 	m_password = "";
+ 	m_clientId = "";
+	m_destUri = "";
+ 	m_sendTimeout = 0;
+	m_closeTimeout = 0;
+	m_producerWindowSize = 0;
 
-typedef map<string,TopicInfo*> Topics;
+	m_genericTopic.bUseTopic = false;
+	m_genericTopic.bDeliveryModePersistent = false;
+	m_genericTopic.destUri = "";
 
-class MonitorPlugInActiveMQ : public MonitorPlugIn
+	m_bDeliveryModePersistent = false;
+	m_bTopicsInitialized = false;
+
+	m_session = NULL;
+	m_connection = NULL;
+
+	activemq::library::ActiveMQCPP::initializeLibrary();
+}
+
+MonitorPlugInActiveMQ::~MonitorPlugInActiveMQ()
 {
-public:
- 	std::string brokerUri;
- 	std::string username;
- 	std::string password;
- 	std::string clientId;
-	std::string destUri;
- 	unsigned int sendTimeout;
-	unsigned int closeTimeout;
-	unsigned int producerWindowSize;
-	bool bUseCompression;
-	bool bClientAck;
-	bool bDeliveryModePersistent;
- 	bool bConnected;
-
-	Connection* connection;
-	Session* session;
-
-	TopicInfo genericTopic;
-	Topics topics;
-
-	MonitorPlugInActiveMQ()
+	Topics::iterator i ;
+	TopicInfo *pTopicInfo;
+	
+  	// Destroy resources.
+	for (i = m_topics.begin(); i != m_topics.end(); i++)
 	{
-		bUseCompression = false;
-		bClientAck = false;
- 		bConnected = false;
-	}
+		pTopicInfo = i->second;
 
-	virtual ~MonitorPlugInActiveMQ()
-	{
-		Topics::iterator i ;
-		TopicInfo *pTopicInfo;
-		
-	    	// Destroy resources.
-		for (i = topics.begin(); i != topics.end(); i++)
-		{
-			pTopicInfo = i->second;
-
-			try {
-				if (pTopicInfo->destination != NULL) { 
-					delete pTopicInfo->destination;
-				}
-	        	}
-			catch (CMSException& e) { 
-				e.printStackTrace(); 
-			}
-			
-			pTopicInfo->destination = NULL;
-
-			try {
-				if (pTopicInfo->producer != NULL) {
-					delete pTopicInfo->producer;
-				}
-			}
-			catch (CMSException& e) { 
-				e.printStackTrace(); 
-			}
-			
-			pTopicInfo->producer = NULL;
-		}
-
-		// Close open resources.
 		try {
-			if (session != NULL) {
-				session->close();
+			if (pTopicInfo->destination != NULL) { 
+				delete pTopicInfo->destination;
 			}
-
-			if (connection != NULL) {
-				connection->close();
-			}
-		}
-		catch (CMSException& e) {
+       	}
+		catch (CMSException& e) { 
 			e.printStackTrace(); 
 		}
+			
+		pTopicInfo->destination = NULL;
 
 		try {
-			if (session != NULL) {
-				delete session;
+			if (pTopicInfo->producer != NULL) {
+				delete pTopicInfo->producer;
 			}
 		}
 		catch (CMSException& e) { 
 			e.printStackTrace(); 
 		}
-
-		session = NULL;
-
-		try {
-			if (connection != NULL) {
-				delete connection;
-			}
-		} 
-		catch (CMSException& e) { 
-			e.printStackTrace(); 
-		}
-
-		connection = NULL;
+		
+		pTopicInfo->producer = NULL;
 	}
 
-	virtual void Show()
-	{
-		FILE_LOG(logINFO) << "MonitorActiveMQPlugin successfully loaded" ;
+	// Close open resources.
+	try {
+		if (m_session != NULL) {
+			m_session->close();
+		}
+
+		if (m_connection != NULL) {
+			m_connection->close();
+		}
+	}
+	catch (CMSException& e) {
+		e.printStackTrace(); 
 	}
 
-	virtual bool processResult(class ModuleResultBase *pRes)
-	{
-		FILE_LOG(logDEBUG) << "apache mq: processing Result...";
-
-		if (bConnected == false) {
-			return false;
+	try {
+		if (m_session != NULL) {
+			delete m_session;
 		}
+	}
+	catch (CMSException& e) { 
+		e.printStackTrace(); 
+	}
 
-		// TODO Produce TextMessage
-		return true;
-/*
-		int pingcounter=0 ;
-		while (mysql_ping(&m_mysql) && pingcounter<100)
-		{
-			usleep(100) ;
-			pingcounter++ ;
-			FILE_LOG(logINFO) << "mysql connection lost ... trying reconnect"  ;
+	m_session = NULL;
+
+	try {
+		if (m_connection != NULL) {
+			delete m_connection;
 		}
+	} 
+	catch (CMSException& e) { 
+		e.printStackTrace(); 
+	}
 
-		if (mysql_ping(&m_mysql))
-		{
-			FILE_LOG(logERROR) << " unable to reconnect to mysql database" ;
-			return false ;
-		}
+	m_connection = NULL;
+}
 
-		if (pingcounter>0)
-		{
-			FILE_LOG(logINFO) << "mysql: connection re-established"  ;
-		}
+void MonitorPlugInActiveMQ::Show()
+{
+	FILE_LOG(logINFO) << "MonitorActiveMQPlugin successfully loaded" ;
+}
 
+bool MonitorPlugInActiveMQ::processResult(class ModuleResultBase *pRes)
+{
+	FILE_LOG(logDEBUG) << "apachemq: processing Result...";
 
-		if ((*pRes)["typ"]=="fms")
-		{
-			std::string insertString ;
-			insertString = createInsertString(pRes,fmsMapping,fmsTable);
-			mysql_query(&m_mysql,insertString.c_str()) ;
-		} else if ((*pRes)["typ"]=="pocsag")
-		{
-			std::string insertString ;
-			insertString = createInsertString(pRes,pocsagMapping,pocsagTable);
-			mysql_query(&m_mysql,insertString.c_str()) ;
-		}else if ((*pRes)["typ"]=="zvei")
-		{
-			std::string insertString;
-			insertString = createInsertString(pRes,zveiMapping,zveiTable);
-			mysql_query(&m_mysql,insertString.c_str()) ;
-		}
+	if (m_bConnected == false) {
+		FILE_LOG(logERROR) << "apachmq: ignoring message 'cause no active connection";
+		return false;
+	}
+
+	if (m_bTopicsInitialized == false) {
+		throw RuntimeException(__FILE__, __LINE__, "processResult must be called AFTER initializeTopics()");
+	}
 
 
-		return true ;
-*/	}
+	std::string type = (*pRes)["typ"];
 
-	virtual bool initProcessing(class MonitorConfiguration* configPtr, XMLNode config)
-	{
-		activemq::library::ActiveMQCPP::initializeLibrary();
+	if (m_topics.find(type) == m_topics.end()) {
+		FILE_LOG(logERROR) << "apachemq: received type " << type << " which is not registered";
+		return false;
+	}
+	
+	TopicInfo* topicInfo = (m_topics.find(type))->second;
+	TextMessage* message = m_session->createTextMessage();
 
-		// read default configuration for topics
-		readTopic(config, genericTopic, genericTopic);
+	ResultItemsMap::iterator i;
 
-		brokerUri 	= getNodeText(config, "brokerUri", "tcp://127.0.0.1:61616");
-		username 	= getNodeText(config, "username", "");
-		password 	= getNodeText(config, "password", "");
-		clientId 	= getNodeText(config,"clientId", "");
+	for (i = (*pRes).m_Items.begin(); i != (*pRes).m_Items.end(); i++) {
+		message->setStringProperty(i->first, i->second);
+	}
 
-		sendTimeout 	= getNodeInt(config, "sendTimeout", 0);
-		closeTimeout 	= getNodeInt(config, "closeTimeout", 0);
-		producerWindowSize = getNodeInt(config, "producerWindowSize", 0);
-		bUseCompression = getNodeBool(config, "useCompression", false);
-		bClientAck 	= getNodeBool(config, "clientAck", false);
+
+	topicInfo->producer->send(message);
+	
+	delete message;
+
+	return true;
+}
+
+void MonitorPlugInActiveMQ::initializeConfiguration(XMLNode config)
+{
+	m_brokerUri 	= getNodeText(config, ACTIVEMQ_XMLNODE_BROKERURI, "tcp://127.0.0.1:61616");
+	m_username 		= getNodeText(config, ACTIVEMQ_XMLNODE_USERNAME, "");
+	m_password 		= getNodeText(config, ACTIVEMQ_XMLNODE_PASSWORD, "");
+	m_clientId 		= getNodeText(config, ACTIVEMQ_XMLNODE_CLIENTID, "");
+
+	m_sendTimeout 	= getNodeInt(config, ACTIVEMQ_XMLNODE_SENDTIMEOUT, 0);
+	m_closeTimeout 	= getNodeInt(config, ACTIVEMQ_XMLNODE_CLOSETIMEOUT, 0);
+	m_producerWindowSize 	= getNodeInt(config, ACTIVEMQ_XMLNODE_PRODUCERWINDOWSIZE, 0);
+	m_bUseCompression 		= getNodeBool(config, ACTIVEMQ_XMLNODE_USECOMPRESSION, false);
+	m_bClientAck 	= getNodeBool(config, ACTIVEMQ_XMLNODE_CLIENTACK, false);
 		
-		std::string logFile	= getNodeText(config, "logfile", "screen");
-		std::string logLevel	= getNodeText(config, "loglevel", "INFO");
+	std::string logFile		= getNodeText(config, ACTIVEMQ_XMLNODE_LOGFILE, "screen");
+	std::string logLevel	= getNodeText(config, ACTIVEMQ_XMLNODE_LOGLEVEL, "INFO");
 
-		#ifdef WIN32
-		if (!(logFile == "screen")) {
-			FILE* pFile = fopen(logFile.c_str(), "a");
-			Output2FILE::Stream() = pFile;
+	#ifdef WIN32
+	if (!(logFile == "screen")) {
+		FILE* pFile = fopen(logFile.c_str(), "a");
+		Output2FILE::Stream() = pFile;
+	}
 
-		}
+	FILELog::ReportingLevel() = FILELog::FromString(logLevel);
+	FILE_LOG(logINFO) << "logging started";
+	#endif
+}
 
-		FILELog::ReportingLevel() = FILELog::FromString(logLevel);
-		FILE_LOG(logINFO) << "logging started";
-		#endif
+Topics MonitorPlugInActiveMQ::getTopics()
+{
+	return m_topics;
+}
 
-		auto_ptr<ActiveMQConnectionFactory> connectionFactory(new ActiveMQConnectionFactory());
+void MonitorPlugInActiveMQ::setTopics(Topics& topics)
+{
+	m_topics = topics;
+}
 
-		// create a connection
-		try {
-			connectionFactory->setUsername(username);
-			connectionFactory->setPassword(password);
-			connectionFactory->setClientId(clientId);
-			connectionFactory->setBrokerURI(brokerUri);
-			connectionFactory->setUseCompression(bUseCompression);
-			connectionFactory->setSendTimeout(sendTimeout);
-			connectionFactory->setCloseTimeout(closeTimeout);
-			connectionFactory->setProducerWindowSize(producerWindowSize);
+void MonitorPlugInActiveMQ::initializeConnectionFactory(ActiveMQConnectionFactory *connectionFactory)
+{
+	// Set Broker-URI first - otherwise username and password is lost
+	connectionFactory->setBrokerURI(m_brokerUri);
 
-		        connection = connectionFactory->createConnection();
-	        	connection->start();
+	if (!m_username.empty()) {
+		connectionFactory->setUsername(m_username);
+	}
 
-			if (bClientAck) {
-                		session = connection->createSession(Session::CLIENT_ACKNOWLEDGE);
-			} 
-			else {
-				session = connection->createSession(Session::AUTO_ACKNOWLEDGE);
-			}
+	if (!m_password.empty()) {
+		connectionFactory->setPassword(m_password);
+	}
 
-			bConnected = true;
+	if (!m_clientId.empty()) {
+		connectionFactory->setClientId(m_clientId);
+	}
+
+	connectionFactory->setUseCompression(m_bUseCompression);
+	connectionFactory->setSendTimeout(m_sendTimeout);
+	connectionFactory->setCloseTimeout(m_closeTimeout);
+	connectionFactory->setProducerWindowSize(m_producerWindowSize);
+}
+
+bool MonitorPlugInActiveMQ::initializeActiveMqConnection()
+{
+	auto_ptr<ActiveMQConnectionFactory> connectionFactory(new ActiveMQConnectionFactory());
+	initializeConnectionFactory(connectionFactory.get());
+
+	// create a connection
+	try {
+        m_connection = connectionFactory->createConnection();
+       	m_connection->start();
+
+		if (m_bClientAck) {
+			m_session = m_connection->createSession(Session::CLIENT_ACKNOWLEDGE);
 		} 
-		catch (CMSException& e) {
-			FILE_LOG(logERROR) << "Could not connect to messaging queue \"" << brokerUri << "\" with username=\"" << username << "\"";
-			return false;
+		else {
+			m_session = m_connection->createSession(Session::AUTO_ACKNOWLEDGE);
 		}
 
-		parseTopics(config);
+		m_bConnected = true;
+	} 
+	catch (CMSException& e) {
+		FILE_LOG(logERROR) << "Could not connect to messaging queue \"" << m_brokerUri << "\" with username=\"" << m_username << "\"";
+		m_bConnected = false;
+	}
 
-		Topics::iterator i;
-		TopicInfo *pTopicInfo;
+	return m_bConnected;
+}
+
+bool MonitorPlugInActiveMQ::initProcessing(class MonitorConfiguration* configPtr, XMLNode config)
+{
+	// initialize ActiveMQ
+	activemq::library::ActiveMQCPP::initializeLibrary();
+
+	// read default configuration for topics
+	parseTopic(config, m_genericTopic, m_genericTopic);
+
+	initializeConfiguration(config);
+
+	if (initializeActiveMqConnection()) {
+		parseTopics(config, m_topics, m_genericTopic);
+		initializeTopics(m_topics);
+	}
+
+	return m_bConnected;
+}
+
+void MonitorPlugInActiveMQ::initializeTopics(Topics &topics)
+{
+	if (m_bConnected == false) {
+		throw RuntimeException(__FILE__, __LINE__, "Tried to initialize topics without established ActiveMQ connection. Call initializeActiveMqConnection() first.");
+	}
+
+	Topics::iterator i;
+	TopicInfo *pTopicInfo;
+
+	// create new producers
+	for (i = topics.begin(); i != topics.end(); i++)
+	{
+		pTopicInfo = i->second;
 		
-		// create new producers
-		for (i = topics.begin(); i != topics.end(); i++)
-		{
-			pTopicInfo = i->second;
+		if (pTopicInfo->bUseTopic) {
+			pTopicInfo->destination = m_session->createTopic(pTopicInfo->destUri);
+		} 
+		else {
+			pTopicInfo->destination = m_session->createQueue(pTopicInfo->destUri);
+		}
+
+		pTopicInfo->producer = m_session->createProducer(pTopicInfo->destination);
+
+		if (pTopicInfo->bDeliveryModePersistent) {
+			pTopicInfo->producer->setDeliveryMode(DeliveryMode::PERSISTENT);
+		} 
+		else {
+			pTopicInfo->producer->setDeliveryMode(DeliveryMode::NON_PERSISTENT);
+		}
+	}
+	
+	m_bTopicsInitialized = true;
+}
+
+bool MonitorPlugInActiveMQ::quitProcessing() 
+{
+	return true;
+}
+
+void MonitorPlugInActiveMQ::parseTopics(XMLNode config, Topics &topics, TopicInfo &referenceTopic)
+{
+	XMLNode topicNode;
+	Topics::iterator i;
+	TopicInfo *pTopicInfo;
+	
+	// defaults
+	vector<string> channels;
+	channels.push_back(ACTIVEMQ_KEY_POCSAG);
+	channels.push_back(ACTIVEMQ_KEY_ZVEI);
+	channels.push_back(ACTIVEMQ_KEY_FMS);
+	
+	for (unsigned int i = 0, m = channels.size(); i < m; i++)
+	{
+		pTopicInfo = new TopicInfo;
+		initializeTopic(*pTopicInfo, referenceTopic);
+		topics.insert(PairMapping(channels.at(i), pTopicInfo));
+	}
+
+	int nTopic = config.nChildNode(ACTIVEMQ_XMLNODE_TOPIC);
+	
+	for (int num = 0; num < nTopic ; ++num)
+	{
+		if (!((topicNode = config.getChildNode(ACTIVEMQ_XMLNODE_TOPIC, num))).isEmpty()) {
+			std::string type = topicNode.getAttribute(ACTIVEMQ_XMLATTR_TYPE) ;
 			
-			if (pTopicInfo->bUseTopic) {
-				pTopicInfo->destination = session->createTopic(pTopicInfo->destUri);
-			} 
-			else {
-				pTopicInfo->destination = session->createQueue(pTopicInfo->destUri);
-			}
-
-			pTopicInfo->producer = session->createProducer(pTopicInfo->destination);
-
-			if (pTopicInfo->bDeliveryModePersistent) {
-				pTopicInfo->producer->setDeliveryMode(DeliveryMode::PERSISTENT);
-			} 
-			else {
-				pTopicInfo->producer->setDeliveryMode(DeliveryMode::NON_PERSISTENT);
+			if ((type == ACTIVEMQ_KEY_POCSAG) || (type == ACTIVEMQ_KEY_FMS) || (type == ACTIVEMQ_KEY_ZVEI)) {
+				pTopicInfo = (topics.find(type))->second;
+				parseTopic(topicNode, *pTopicInfo, referenceTopic);
 			}
 		}
 	}
+}
 
-	virtual bool quitProcessing() 
-	{
-		return true;
+void MonitorPlugInActiveMQ::initializeTopic(TopicInfo &topicInfo, TopicInfo &referenceTopic)
+{
+	topicInfo.bUseTopic = referenceTopic.bUseTopic;
+	topicInfo.bDeliveryModePersistent = referenceTopic.bDeliveryModePersistent;
+	topicInfo.destUri = referenceTopic.destUri;
+	topicInfo.destination = NULL;
+	topicInfo.producer = NULL;
+}
+
+void MonitorPlugInActiveMQ::parseTopic(XMLNode config, TopicInfo &topicInfo, TopicInfo &referenceTopic)
+{
+	initializeTopic(topicInfo, referenceTopic);
+
+	if (config.nChildNode(ACTIVEMQ_XMLNODE_USETOPIC) >= 1) {
+		topicInfo.bUseTopic = getNodeBool(config, ACTIVEMQ_XMLNODE_USETOPIC, false);
 	}
 
-	void parseTopics(XMLNode config)
-	{
-		XMLNode topicNode;
-		Topics::iterator i;
-		TopicInfo pTopicInfo;
-		
-		// alle Topics initalisieren
-		for (i=topics.begin(); i != topics.end(); i++)
-		{
-			pTopicInfo = static_cast<TopicInfo>(*(i->second));
-			initalizeTopic(pTopicInfo, genericTopic);
-		}
-
-		int nTopic=config.nChildNode("topic");
-		
-		for (int num=0; num<nTopic ; ++num)
-		{
-			if (!((topicNode = config.getChildNode("topic", num))).isEmpty()) {
-				std::string typ = topicNode.getAttribute("type") ;
-
-				pTopicInfo = static_cast<TopicInfo>(*((topics.find(typ))->second));
-
-				if (topics.count(typ) == 1) {
-					readTopic(topicNode, pTopicInfo, genericTopic) ;
-				}
-			}
-		}
+	if (config.nChildNode(ACTIVEMQ_XMLNODE_DELIVERYMODEPERSISTENT) >= 1) {
+		topicInfo.bDeliveryModePersistent = getNodeBool(config, ACTIVEMQ_XMLNODE_DELIVERYMODEPERSISTENT, false);
 	}
 
-	void initalizeTopic(TopicInfo &topicInfo, TopicInfo &referenceTopic)
-	{
-		if (&referenceTopic != NULL) {
-			topicInfo.bUseTopic = referenceTopic.bUseTopic;
-			topicInfo.bDeliveryModePersistent = referenceTopic.bDeliveryModePersistent;
-			topicInfo.destUri = referenceTopic.destUri;
-		}
+	if (config.nChildNode(ACTIVEMQ_XMLNODE_DESTURI) >= 1) {
+		topicInfo.destUri = getNodeText(config, ACTIVEMQ_XMLNODE_DESTURI, "monitord");
 	}
-
-	void readTopic(XMLNode &config, TopicInfo &topicInfo, TopicInfo &referenceTopic)
-	{
-		if (&topicInfo == NULL) {
-			initalizeTopic(topicInfo, referenceTopic);
-		}
-
-		if (config.nChildNode("useTopic") >= 1) {
-			topicInfo.bUseTopic = getNodeBool(config, "useTopic", false);
-		}
-
-		if (config.nChildNode("deliveryModePersistent") >= 1) {
-			topicInfo.bDeliveryModePersistent = getNodeBool(config, "deliveryModePersistent", false);
-		}
-
-		if (config.nChildNode("destUri") >= 1) {
-			topicInfo.destUri = getNodeText(config, "destUri", "monitord");
-		}
-	}
-};
+}
 
 class MonitorPlugInActiveMQFactory : public MonitorPlugInFactory
 {
@@ -367,7 +372,7 @@ public:
 	}
 };
 
-DLL_EXPORT void * factory0( void )
+DLL_EXPORT void * factory1( void )
 {
 	return new MonitorPlugInActiveMQFactory;
 }
