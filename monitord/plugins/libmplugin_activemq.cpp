@@ -134,6 +134,8 @@ bool MonitorPlugInActiveMQ::processResult(class ModuleResultBase *pRes)
 		return false;
 	}
 	
+	FILE_LOG(logINFO) << "Preparing new message";
+	
 	TopicInfo* topicInfo = (m_topics.find(type))->second;
 	TextMessage* message = m_session->createTextMessage();
 
@@ -146,25 +148,36 @@ bool MonitorPlugInActiveMQ::processResult(class ModuleResultBase *pRes)
 
 	topicInfo->producer->send(message);
 	
+	FILE_LOG(logINFO) << "message sent";
+
 	delete message;
 
 	return true;
 }
 
 void MonitorPlugInActiveMQ::initializeConfiguration(XMLNode config)
-{
+{	
+	FILE_LOG(logDEBUG) << "Reading broker URI";
 	m_brokerUri 	= getNodeText(config, ACTIVEMQ_XMLNODE_BROKERURI, "tcp://127.0.0.1:61616");
+	FILE_LOG(logDEBUG) << "Reading username:";
 	m_username 		= getNodeText(config, ACTIVEMQ_XMLNODE_USERNAME, "");
+	FILE_LOG(logDEBUG) << "Reading password";
 	m_password 		= getNodeText(config, ACTIVEMQ_XMLNODE_PASSWORD, "");
+	FILE_LOG(logDEBUG) << "Reading clientId";
 	m_clientId 		= getNodeText(config, ACTIVEMQ_XMLNODE_CLIENTID, "");
-
+	FILE_LOG(logDEBUG) << "Reading sendTimeout";
 	m_sendTimeout 	= getNodeInt(config, ACTIVEMQ_XMLNODE_SENDTIMEOUT, 0);
+	FILE_LOG(logDEBUG) << "Reading closeTimeout";
 	m_closeTimeout 	= getNodeInt(config, ACTIVEMQ_XMLNODE_CLOSETIMEOUT, 0);
+	FILE_LOG(logDEBUG) << "Reading producerWindowSize";
 	m_producerWindowSize 	= getNodeInt(config, ACTIVEMQ_XMLNODE_PRODUCERWINDOWSIZE, 0);
+	FILE_LOG(logDEBUG) << "Reading bUseCompression";
 	m_bUseCompression 		= getNodeBool(config, ACTIVEMQ_XMLNODE_USECOMPRESSION, false);
+	FILE_LOG(logDEBUG) << "Reading bClientAck";
 	m_bClientAck 	= getNodeBool(config, ACTIVEMQ_XMLNODE_CLIENTACK, false);
-		
+	FILE_LOG(logDEBUG) << "Reading logFile";
 	std::string logFile		= getNodeText(config, ACTIVEMQ_XMLNODE_LOGFILE, "screen");
+	FILE_LOG(logDEBUG) << "Reading logLevel";
 	std::string logLevel	= getNodeText(config, ACTIVEMQ_XMLNODE_LOGLEVEL, "INFO");
 
 	#ifdef WIN32
@@ -209,6 +222,8 @@ void MonitorPlugInActiveMQ::initializeConnectionFactory(ActiveMQConnectionFactor
 	connectionFactory->setSendTimeout(m_sendTimeout);
 	connectionFactory->setCloseTimeout(m_closeTimeout);
 	connectionFactory->setProducerWindowSize(m_producerWindowSize);
+	
+	FILE_LOG(logDEBUG) << "Connection factory initialized";
 }
 
 bool MonitorPlugInActiveMQ::initializeActiveMqConnection()
@@ -234,6 +249,8 @@ bool MonitorPlugInActiveMQ::initializeActiveMqConnection()
 		FILE_LOG(logERROR) << "Could not connect to messaging queue \"" << m_brokerUri << "\" with username=\"" << m_username << "\"";
 		m_bConnected = false;
 	}
+
+	FILE_LOG(logDEBUG) << "Connection initialized";
 
 	return m_bConnected;
 }
@@ -285,8 +302,12 @@ void MonitorPlugInActiveMQ::initializeTopics(Topics &topics)
 		else {
 			pTopicInfo->producer->setDeliveryMode(DeliveryMode::NON_PERSISTENT);
 		}
+		
+		FILE_LOG(logINFO) << "Topic destination \"" << pTopicInfo->destination << "\" created";
 	}
-	
+
+	FILE_LOG(logINFO) << "Topics initialized";
+		
 	m_bTopicsInitialized = true;
 }
 
@@ -355,24 +376,21 @@ void MonitorPlugInActiveMQ::parseTopic(XMLNode config, TopicInfo &topicInfo, Top
 	}
 }
 
-class MonitorPlugInActiveMQFactory : public MonitorPlugInFactory
+MonitorPlugInActiveMQFactory::MonitorPlugInActiveMQFactory()
 {
-public:
-	MonitorPlugInActiveMQFactory()
-	{
-	}
+}
 
-	~MonitorPlugInActiveMQFactory()
-	{
-	}
+MonitorPlugInActiveMQFactory::~MonitorPlugInActiveMQFactory()
+{
+}
 
-	virtual MonitorPlugIn * CreatePlugIn()
-	{
-		return new MonitorPlugInActiveMQ();
-	}
-};
+MonitorPlugIn * MonitorPlugInActiveMQFactory::CreatePlugIn()
+{
+	return new MonitorPlugInActiveMQ();
+}
 
-DLL_EXPORT void * factory1( void )
+
+DLL_EXPORT void * factory0( void )
 {
 	return new MonitorPlugInActiveMQFactory;
 }

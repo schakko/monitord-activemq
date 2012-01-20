@@ -99,6 +99,15 @@ public:
 	void initializeTopic(TopicInfo &topicInfo, TopicInfo &referenceTopic);
 };
 
+class MonitorPlugInActiveMQFactory : public MonitorPlugInFactory
+{
+public:
+	MonitorPlugInActiveMQFactory();
+	~MonitorPlugInActiveMQFactory();
+	virtual MonitorPlugIn * CreatePlugIn();
+};
+
+
 
 #endif
 #endif /*MPLUGINACTIVEMQ_H_*/
