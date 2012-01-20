@@ -6,8 +6,11 @@ monitord-activemq depends on activemq-cpp.
 ## Installation
 Just push back this directory into /monitord/trunk.
 
-## Compiling
-Compile monitord by passing --with-activemq
+## Compiling on CentOS 6.2
+
+# yum install autoconf automake pkg-config alsa-lib-devel lua-devel
+# aclocal -Im4
+# ./configure --enable-plugins --with-activemq
 
 ## Configuration 
 Edit your monitord.xml:

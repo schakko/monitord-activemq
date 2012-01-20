@@ -11,7 +11,6 @@ AC_PROG_CXX
 AX_LUA_HEADERS
 AX_LUA_LIBS
 
-
 case "$host_os" in
 	linux*)
 		LINUX=true
@@ -26,7 +25,7 @@ case "$host_os" in
 		SOXLIBDLL=[libsox.so] 	
 		MYSQLLIBNAME=[mysqlclient]
 		MYSQLLIBDLL=[libmysqlclient.so] 
-		ACTIVEMQNAME=[activemq-cpp]
+		ACTIVEMQLIBNAME=[activemq-cpp]
 		ACTIVEMQDLL=[libactivemq-cpp.so]
 		;;
 	mingw32*)
@@ -165,15 +164,29 @@ else
 		[AC_MSG_ERROR([sox not found])])
 	fi
 	
-	if test "x$use_activemq" != xno; then
-		# PKG_CHECK_MODULES provides environment vars in activemq_CFLAGS and activemq_LIBS
-		PKG_CHECK_MODULES([ACTIVEMQ], [activemq-cpp],
-		[
-			AC_DEFINE([HAVE_ACTIVEMQ], [1], [Define if you have activemq-cpp])
-			activemq=true
-		],
-		[AC_MSG_ERROR([activemq not found])])
-	fi
+	AS_IF([test "x$use_activemq" != xno],
+		[PKG_CHECK_MODULES(
+			[ACTIVEMQ], 
+			[$ACTIVEMQLIBNAME], 
+			[
+				AC_MSG_NOTICE([activemq is present - ActiveMQ plugin will be created])
+				AC_DEFINE([HAVE_ACTIVEMQ], [1], [Define if you have activemq-cpp])
+				activemq=true
+			],
+			[AC_MSG_FAILURE([$ACTIVEMQLIBNAME is not installed as package])]
+	)])
+#			[AC_CHECK_LIB([$ACTIVEMQLIBNAME],[main],
+#				[
+#					AC_SUBST([LIBACTIVEMQ], ["-l$ACTIVEMQLIBNAME"])
+#					AC_DEFINE([HAVE_ACTIVEMQ], [1], [Define if you have activemq])
+#					activemq=true
+#				],
+#				[if test "x$use_activemq" != xcheck; then
+#					AC_MSG_FAILURE([--with-activemq but $ACTIVEMQLIBNAME failed])
+#				fi
+#			])
+#		])
+
 
 	LIBS=
 		AS_IF([test "x$use_sox" != xno],

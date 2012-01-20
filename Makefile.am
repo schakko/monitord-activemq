@@ -169,10 +169,10 @@ monitord_plugins_libmplugin_activemq_la_CPPFLAGS =\
 
 monitord_plugins_libmplugin_activemq_la_LDFLAGS=\
 	-no-undefined \
-	${LIiHEMQ} \
+	${LIBACTIVEMQ} \
 	${DLL}
 
-monitord_plugins_libmplugin_activemq_la_LIBS=\
+monitord_plugin_libmplugin_activemq_la_LIBS=\
 	${ACTIVEMQ_LIBS}
 
 endif
